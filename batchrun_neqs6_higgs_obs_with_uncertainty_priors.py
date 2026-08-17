@@ -62,6 +62,15 @@ BATCH_ID = 1   # will need to change this as I go: 1, 2, 3, 4, 5
 
 SAVEPATHS = True
 
+# The sampled slow-roll parameters remain defined at N=60.
+# After calcpath constructs the usual N=0 -> 60 trajectory,
+# extend that same trajectory backward to N=70. If I had diff trun uncertainty, I could
+# alter extension.
+N_ANCHOR = 60.0
+N_EXTEND = 70.0
+EXTENSION_KMAX = 20000
+
+SAVEPATHS = True
 
 ## For Higgs N=60:
 ## ns = 0.969485
@@ -302,6 +311,81 @@ def save_path(y, N, kount, fname):
             outfile.write("%le %le\n" % (V, (V*y[2, i])/(3. - y[2, i]))) #I think this is KE
 
 
+def extend_path_to_larger_N(
+    y_at_anchor,
+    N_anchor=60.0,
+    N_target=70.0,
+    kmax_ext=20000,
+):
+    """
+    Starting from a state defined at N_anchor (normally N=60),
+    integrate the SAME truncated flow hierarchy backward in time
+    toward larger N, ending at N_target (normally N=70).
+
+    This does NOT change the physical meaning of the sampled
+    slow-roll parameters: they remain defined at N=60.
+
+    Returns
+    -------
+    path_ext : ndarray, shape (NEQS, n_ext)
+        Flow trajectory from ~N_anchor to N_target.
+
+    N_ext : ndarray, shape (n_ext,)
+        Corresponding N values.
+
+    y_Ntarget : ndarray, shape (NEQS,)
+        State reached at N_target.
+    """
+#Built like calcpath
+    y_ext = y_at_anchor.copy()
+
+#allocate buffers for integration like before
+    yp_ext = np.zeros(
+        (NEQS, kmax_ext),
+        dtype=float,
+        order='C'
+    )
+
+    xp_ext = np.zeros(
+        kmax_ext,
+        dtype=float,
+        order='C'
+    )
+
+    kount_ext = None
+
+#integrate y from N_anchor to N_target given these parameters
+    z_ext, kount_ext = int_de(
+        y_ext,
+        N_anchor,
+        N_target,
+        kount_ext,
+        kmax_ext,
+        yp_ext,
+        xp_ext,
+        NEQS,
+        derivs
+    )
+
+    if z_ext:
+        raise RuntimeError(
+            f"Extension integration failed: "
+            f"N={N_anchor} -> N={N_target}"
+        )
+
+    if kount_ext is None or kount_ext < 2:
+        raise RuntimeError(
+            f"Extension integration produced too few points: "
+            f"kount_ext={kount_ext}"
+        )
+
+#save path and e-folds
+    path_ext = yp_ext[:, :kount_ext].copy()
+    N_ext = xp_ext[:kount_ext].copy()
+
+    return path_ext, N_ext, y_ext
+
+
 #This function right now is not necessary for us to use since we will account for uncertainty in a diff way
 #def get_state_at_N(y_end, N_start, N_target, derivs):
 #    """
@@ -503,10 +587,81 @@ def run_neqs6_lam3_models_batch(clean_output=True):
 #            if PRINT_REJECTIONS:
 #                print(f"REJECTED: alpha_s={alpha_s:.10e} outside ({ALPHA_MIN:.3e}, {ALPHA_MAX:.3e})")
 #            continue
+
+
+##Okay here we will extend the trajectory such that, we begin with trajectory from N=60 to N=0
+## and only bother to extend models in coarse CMB space
+
+        # ========================================================
+        # EXTEND ACCEPTED N=0 -> 60 TRAJECTORY BACK TO N=70
+        #
+        # IMPORTANT:
+        # y is still the state at N=60 returned by calcpath.
+        # We copy it so the spectrum calculation below continues
+        # to see exactly the same N=60 state as before.
+        # ========================================================
+
+        y_N60 = y.copy()
+
+        try:
+            path_60_to_70, N_60_to_70, y_N70 = extend_path_to_larger_N(
+                y_at_anchor=y_N60,
+                N_anchor=N_ANCHOR,
+                N_target=N_EXTEND,
+                kmax_ext=EXTENSION_KMAX,
+            )
+
+        except RuntimeError as exc:
+            rejected_other += 1
+
+            print(
+                "REJECTED: could not construct "
+                f"N={N_ANCHOR:g} -> N={N_EXTEND:g} extension"
+            )
+            print(exc)
+
+            continue
+
+        # First-run diagnostics
+        if VERBOSE or (PRINT_FIRST_TRIAL and trial_count == 1):
+
+            print("\n" + "-" * 70)
+            print("BACKWARD PATH EXTENSION CHECK")
+
+            print(
+                f"Original path N range: "
+                f"{N[0]:.10f} -> {N[-1]:.10f}"
+            )
+
+            print(
+                f"Extension N range: "
+                f"{N_60_to_70[0]:.10f} -> "
+                f"{N_60_to_70[-1]:.10f}"
+            )
+
+#            print("\nN=60 state:")
+#            print(f"  epsilon = {y_N60[2]:.10e}")
+#            print(f"  sigma   = {y_N60[3]:.10e}")
+#            print(f"  lambda2 = {y_N60[4]:.10e}")
+#            print(f"  lambda3 = {y_N60[5]:.10e}")
+#
+#            print("\nN=70 state:")
+#            print(f"  epsilon = {y_N70[2]:.10e}")
+#            print(f"  sigma   = {y_N70[3]:.10e}")
+#            print(f"  lambda2 = {y_N70[4]:.10e}")
+#            print(f"  lambda3 = {y_N70[5]:.10e}")
+
+            print("-" * 70)
             
             
         accepted_count += 1
+        ## To clarify we have three separate objects now
         
+        #y_N60          # physical anchor / sampled model
+        #y_N70          # extrapolated earlier state
+        #path_60_to_70  # extra truncation-systematics trajectory
+
+
         print(
             f"\n[ACCEPTED {accepted_count}/{TARGET_ACCEPTED}] "
             f"trial={trial_count} | "
@@ -611,17 +766,161 @@ def run_neqs6_lam3_models_batch(clean_output=True):
             if VERBOSE:
                 print(f"Before path normalization: y[1] = {y[1]:.6e}")
     
+##We may need to adjust the saved path to include that 70 now. Original is below:
+#            for j in range(calc.npoints):
+#                path[0, j] = path[0, j] - path[0, calc.npoints - 1]
+#                path[1, j] = path[1, j] * y[1]
+#
+#            if VERBOSE:
+#                print(f"After path normalization: max(path[1,:]) = {np.max(path[1,:]):.6e}")
+#
+##        path_name = f"{OUTDIR}/path_neqs{NEQS}_lam5_{lam5:.10e}.dat"
+#        path_name = f"{OUTDIR}/path_neqs{NEQS}_{model_name}.dat"
+#        save_path(path, N, calc.npoints, path_name)
 
-            for j in range(calc.npoints):
-                path[0, j] = path[0, j] - path[0, calc.npoints - 1]
-                path[1, j] = path[1, j] * y[1]
+
+
+##If we want the whole N=70 down to N=0 path
+        # ========================================================
+        # BUILD COMPLETE N=0 -> 70 PATH
+        # ========================================================
+
+        # Work on copies. Keep the original calcpath arrays untouched
+        # until the spectrum calculation above has completely finished.
+        path_main = path[:, :calc.npoints].copy()
+        N_main = N[:calc.npoints].copy()
+
+        path_ext = path_60_to_70.copy()
+        N_ext = N_60_to_70.copy()
+
+        # --------------------------------------------------------
+        # Remove any duplicated N=60 endpoint.
+        #
+        # Do this generically rather than assuming int_de includes
+        # or excludes the exact endpoint.
+        # --------------------------------------------------------
+
+
+        N_combined = np.concatenate([N_main,N_ext[1:]])
+
+        path_combined = np.concatenate([path_main,path_ext[:, 1:]], axis=1)
+
+
+        tol = 1e-8
+
+        print("N_main end =", N_main[-1])
+        print("N_ext start =", N_ext[0])
+        print("N_ext end =", N_ext[-1])
+
+        if not np.all(np.diff(N_main) > 0):
+            raise RuntimeError("N_main is not monotonically increasing.")
+
+        if not np.all(np.diff(N_ext) > 0):
+            raise RuntimeError("N_ext is not monotonically increasing.")
+
+        if abs(N_ext[0] - N_main[-1]) < tol:
+            # Same N=60 anchor appears in both pieces
+            N_combined = np.concatenate([
+                N_main,
+                N_ext[1:]
+            ])
+
+            path_combined = np.concatenate([
+                path_main,
+                path_ext[:, 1:]
+            ], axis=1)
+
+        else:
+            # No duplicate endpoint -- preserve both
+            N_combined = np.concatenate([
+                N_main,
+                N_ext
+            ])
+
+            path_combined = np.concatenate([
+                path_main,
+                path_ext
+            ], axis=1)
+                
+            
+        
+        # ========================================================
+        # APPLY THE SAME NORMALIZATION TO THE ENTIRE 0 -> 70 PATH
+        # ========================================================
+
+        if SPECTRUM:
 
             if VERBOSE:
-                print(f"After path normalization: max(path[1,:]) = {np.max(path[1,:]):.6e}")
+                print(
+                    f"Before extended-path normalization: "
+                    f"y[1] = {y[1]:.6e}"
+                )
 
-#        path_name = f"{OUTDIR}/path_neqs{NEQS}_lam5_{lam5:.10e}.dat"
-        path_name = f"{OUTDIR}/path_neqs{NEQS}_{model_name}.dat"
-        save_path(path, N, calc.npoints, path_name)
+            # IMPORTANT:
+            # Use ONE phi reference for both pieces of the path.
+            #
+            # The ordinary path contains the end-of-inflation point,
+            # so use its phi there as the zero point.
+            phi_end_reference = path_main[0, -1]
+
+            path_combined[0, :] -= phi_end_reference
+
+            # spectrum() has already replaced y[1] with the H
+            # normalization factor, just as in your original runner.
+            path_combined[1, :] *= y[1]
+
+            if VERBOSE:
+                print(
+                    "After extended-path normalization: "
+                    f"max(H) = "
+                    f"{np.max(path_combined[1, :]):.6e}"
+                )
+
+        # ========================================================
+        # SANITY CHECK COMPLETE RANGE
+        # ========================================================
+
+        if VERBOSE or (PRINT_FIRST_TRIAL and accepted_count == 1):
+
+            print("\nCOMPLETE SAVED PATH CHECK")
+            print(
+                f"  N min = {N_combined.min():.10f}"
+            )
+            print(
+                f"  N max = {N_combined.max():.10f}"
+            )
+            print(
+                f"  number of points = {len(N_combined)}"
+            )
+
+            print(
+                f"  closest point to N=60: "
+                f"{N_combined[np.argmin(np.abs(N_combined - 60.0))]:.10f}"
+            )
+
+            print(
+                f"  closest point to N=70: "
+                f"{N_combined[np.argmin(np.abs(N_combined - 70.0))]:.10f}"
+            )
+
+        # ========================================================
+        # SAVE FULL N=0 -> 70 PATH
+        # ========================================================
+
+        path_name = (
+            f"{OUTDIR}/"
+            f"path_neqs{NEQS}_N0to70_paramsAtN60_{model_name}.dat"
+        )
+
+        save_path(
+            path_combined,
+            N_combined,
+            len(N_combined),
+            path_name
+        )
+        
+        
+## To about here
         
 #         print("\nDEBUG original calcpath end:")
 #         print("  original_end_index      =", getattr(calc, "original_end_index", None))
@@ -655,9 +954,27 @@ def run_neqs6_lam3_models_batch(clean_output=True):
             "original_N_before_end": getattr(calc, "original_N_before_end", np.nan),
             "original_N_after_end": getattr(calc, "original_N_after_end", np.nan),
             "original_eps_end": getattr(calc, "original_eps_end", np.nan),
+            
+            
+            # Sampled / anchored state at N=60
+            "eps_N60": y_N60[2],
+            "sig_N60": y_N60[3],
+            "lam2_N60": y_N60[4],
+            "lam3_N60": y_N60[5],
+
+            # Same truncated hierarchy evolved backward to N=70
+            "eps_N70": y_N70[2],
+            "sig_N70": y_N70[3],
+            "lam2_N70": y_N70[4],
+            "lam3_N70": y_N70[5],
+
+            "extended_N_min": np.min(N_combined),
+            "extended_N_max": np.max(N_combined),
 
             "spectrum_N_start": N[3],
-            "path_N_end": N[calc.npoints - 1],
+#            "path_N_end": N[calc.npoints - 1],
+            "original_path_N_end": N[calc.npoints - 1],
+            "extended_path_N_max": np.max(N_combined),
 
             "calc_ret": calc.ret,
             "outdir": OUTDIR
