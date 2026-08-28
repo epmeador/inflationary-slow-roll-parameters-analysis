@@ -57,8 +57,8 @@ if SPECTRUM:
 # # ========================
 # # GLOBAL SETTINGS
 # # ========================
-NEQS = 6
-BATCH_ID = 9   # will need to change this as I go: 1, 2, 3, 4, 5
+NEQS = 8
+BATCH_ID = 6   # will need to change this as I go: 1, 2, 3, 4, 5
 
 SAVEPATHS = True
 
@@ -216,8 +216,8 @@ class Calc:
 #Below we are initializing our starting slow roll parameter values
 #We should be able to choose what ell we are extending to.
 
-#NEQS=6
-def pick_init_vals(eps, sig, lam2, lam3):
+#NEQS=8
+def pick_init_vals(eps, sig, lam2, lam3, lam4, lam5):
 
     init_vals = np.zeros(NEQS, dtype=float, order='C')
 
@@ -227,8 +227,8 @@ def pick_init_vals(eps, sig, lam2, lam3):
     init_vals[3] = sig
     init_vals[4] = lam2
     init_vals[5] = lam3
-#    init_vals[6] = lam4
-#    init_vals[7] = lam5
+    init_vals[6] = lam4
+    init_vals[7] = lam5
 
     init_Nefolds = 60
     return init_vals, init_Nefolds
@@ -416,7 +416,7 @@ def extend_path_to_larger_N(
 #    
 #    
 
-def run_neqs6_lam3_models_batch(clean_output=True):
+def run_neqs8_lam5_models_batch(clean_output=True):
     import shutil
 
     TARGET_ACCEPTED = 50
@@ -473,15 +473,15 @@ def run_neqs6_lam3_models_batch(clean_output=True):
             sig = SIGMA_BASE
             lam2 = LAM2_BASE
             lam3 = LAM3_BASE
-#            lam4 = LAM4_BASE
-#            lam5 = LAM5_BASE
+            lam4 = LAM4_BASE
+            lam5 = LAM5_BASE
         else:
             eps = rng.uniform(EPSILON_MIN, EPSILON_MAX)
             sig = rng.uniform(SIGMA_MIN, SIGMA_MAX)
             lam2 = rng.uniform(LAM2_MIN,LAM2_MAX)
             lam3 = rng.uniform(LAM3_MIN, LAM3_MAX)
-#            lam4 = rng.uniform(LAM4_MIN, LAM4_MAX)
-#            lam5 = rng.uniform(LAM5_MIN, LAM5_MAX)
+            lam4 = rng.uniform(LAM4_MIN, LAM4_MAX)
+            lam5 = rng.uniform(LAM5_MIN, LAM5_MAX)
            
 
 
@@ -511,13 +511,13 @@ def run_neqs6_lam3_models_batch(clean_output=True):
             print(f"σ = {sig:.10e}")
             print(f"λ2 = {lam2:.10e}")
             print(f"λ3 = {lam3:.10e}")
-#            print(f"λ4 = {lam4:.10e}")
-#            print(f"λ5 = {lam5:.10e}")
+            print(f"λ4 = {lam4:.10e}")
+            print(f"λ5 = {lam5:.10e}")
 
         calc = Calc()
 
 #         yinit, calc.Nefolds = pick_init_vals(lam5)
-        yinit, calc.Nefolds = pick_init_vals(eps, sig, lam2, lam3)
+        yinit, calc.Nefolds = pick_init_vals(eps, sig, lam2, lam3, lam4, lam5)
         y = yinit.copy()
 
         path = np.array([[]])
@@ -673,8 +673,8 @@ def run_neqs6_lam3_models_batch(clean_output=True):
             f"σ = {sig:.10e} |"
             f"λ2 = {lam2:.10e} |"
             f"λ3 = {lam3:.10e} |"
-#            f"λ4 = {lam4:.10e} |"
-#            f"λ5 = {lam5:.10e} |"
+            f"λ4 = {lam4:.10e} |"
+            f"λ5 = {lam5:.10e} |"
         )
 
         if VERBOSE:
@@ -682,8 +682,8 @@ def run_neqs6_lam3_models_batch(clean_output=True):
             print(f"σ = {sig:.10e}")
             print(f"λ2 = {lam2:.10e}")
             print(f"λ3 = {lam3:.10e}")
-#            print(f"λ4 = {lam4:.10e}")
-#            print(f"λ5 = {lam5:.10e}")
+            print(f"λ4 = {lam4:.10e}")
+            print(f"λ5 = {lam5:.10e}")
             
     
 
@@ -696,8 +696,8 @@ def run_neqs6_lam3_models_batch(clean_output=True):
 #            OUTDIR = f"{BASE_OUTDIR}/lam5_{lam5:.10e}_trial_{trial_count:06d}"
 
         # Change this if running NEQs = 7 or 8
-        lam4 = 0
-        lam5 = 0
+#        lam4 = 0
+#        lam5 = 0
         
         model_name = (
             f"lam2_{lam2:.10e}_"
@@ -942,8 +942,8 @@ def run_neqs6_lam3_models_batch(clean_output=True):
             "sig": sig,
             "lam2": lam2,
             "lam3": lam3,
-#            "lam4": lam4,
-#            "lam5": lam5,
+            "lam4": lam4,
+            "lam5": lam5,
 
             "r": r,
             "n_s": ns,
@@ -1010,7 +1010,7 @@ def run_neqs6_lam3_models_batch(clean_output=True):
 # %time run_neqs8_lam3_lam4_lam5_models()
 if __name__ == "__main__":
     t0 = time.perf_counter()
-    run_neqs6_lam3_models_batch()
+    run_neqs8_lam5_models_batch()
     t1 = time.perf_counter()
     print(f"Total runtime: {(t1 - t0)/60:.2f} min")
     
